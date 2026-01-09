@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} Found {} packages.", prefix, packages.len().to_string().green().bold());
     let dump = get_dexopt_dump()?;
     let results = parse_dump(&dump);
-    println!("\n{:<45} | {:<30}", "Package".bold().underline(), "DexOpt Status".bold().underline());
+    println!("\n{} | {}", format!("{:<45}", "Package").bold().underline(), format!("{:<30}", "DexOpt Status").bold().underline());
     let mut stdout = io::stdout();
     let mut stats: BTreeMap<String, usize> = BTreeMap::new();
     let mut total_displayed = 0;
@@ -49,11 +49,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for (i, info) in info_list.iter().enumerate() {
                 *stats.entry(info.status.clone()).or_insert(0) += 1;
                 let colored_raw = colorize_line(&info.raw_line, &info.status);
-                if i == 0 { writeln!(stdout, "{:<45} | {}", pkg.bright_white(), colored_raw)?; }
+                if i == 0 { writeln!(stdout, "{} | {}", format!("{:<45}", pkg).bright_white(), colored_raw)?; }
                 else { writeln!(stdout, "{:<45} | {}", "", colored_raw)?; }
             }
+            writeln!(stdout)?;
         } else if args.verbose {
-             writeln!(stdout, "{:<45} | {}", pkg.dimmed(), "(no info found in dump)".italic().red())?;
+             writeln!(stdout, "{} | {}", format!("{:<45}", pkg).dimmed(), "(no info found in dump)".italic().red())?;
+             writeln!(stdout)?;
         }
     }
     print_summary(total_displayed, &stats, args.r#type);
@@ -73,7 +75,7 @@ fn colorize_line(line: &str, status: &str) -> String {
 }
 
 fn get_packages(app_type: AppType) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let output = Command::new("su").arg("-c").arg(match app_type {
+    let output = Command::new("sh").arg("-c").arg(match app_type {
         AppType::User => "pm list packages -3",
         AppType::System => "pm list packages -s",
         AppType::All => "pm list packages",
@@ -86,7 +88,7 @@ fn get_packages(app_type: AppType) -> Result<Vec<String>, Box<dyn std::error::Er
 }
 
 fn get_dexopt_dump() -> Result<String, Box<dyn std::error::Error>> {
-    let output = Command::new("su").arg("-c").arg("dumpsys package dexopt").output()?;
+    let output = Command::new("sh").arg("-c").arg("dumpsys package dexopt").output()?;
     Ok(String::from_utf8(output.stdout)?)
 }
 
@@ -121,7 +123,7 @@ fn print_summary(total_apps: usize, stats: &BTreeMap<String, usize>, app_type: A
     let title = "DEXOPT ANALYSIS SUMMARY";
     let p_s = (width - title.len()) / 2;
     let p_e = width - title.len() - p_s;
-    println!("{} {} {}{}", "║".color(b_blue), " ".repeat(p_s), title.bold().color(b_yellow), format!("{}{}", " ".repeat(p_e), "║").color(b_blue));
+    println!("{}{}{}{}", "║".color(b_blue), " ".repeat(p_s), title.bold().color(b_yellow), format!("{}{}", " ".repeat(p_e), "║").color(b_blue));
     let mid = format!("╠{}╣", "═".repeat(width));
     println!("{}", mid.color(b_blue));
     add_summary_line("App Scope", &app_type.to_string(), Color::Cyan, Color::Magenta, width);
@@ -130,9 +132,13 @@ fn print_summary(total_apps: usize, stats: &BTreeMap<String, usize>, app_type: A
     let sub = "Profile Breakdown";
     let p_s = (width - sub.len()) / 2;
     let p_e = width - sub.len() - p_s;
-    println!("{} {} {}{}", "║".color(b_blue), " ".repeat(p_s), sub.dimmed().bold(), format!("{}{}", " ".repeat(p_e), "║").color(b_blue));
+    println!("{}{}{}{}", "║".color(b_blue), " ".repeat(p_s), sub.dimmed().bold(), format!("{}{}", " ".repeat(p_e), "║").color(b_blue));
     println!("{}", mid.color(b_blue));
-    if stats.is_empty() { println!("{}  No profile data found.                {}", "║".color(b_blue), "║".color(b_blue)); }
+    if stats.is_empty() {
+        let msg = "No profile data found.";
+        let padding = " ".repeat(width.saturating_sub(2 + msg.len()));
+        println!("{}  {}{}{}", "║".color(b_blue), msg, padding, "║".color(b_blue));
+    }
     else {
         for (profile, count) in stats {
             let color = match profile.as_str() {

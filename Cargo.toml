@@ -2,6 +2,11 @@
 name = "dexopt_analyzer"
 version = "0.1.0"
 edition = "2024"
+authors = ["sms1sis sadimsajid2004@gmail.com"]
+license = "MIT"
+description = "A tool to analyze dexopt on android"
+repository = "https://github.com/sms1sis/dexopt_analyzer"
+categories = ["command-line-utilities"]
 
 [dependencies]
 clap = { version = "4.5.54", features = ["derive"] }

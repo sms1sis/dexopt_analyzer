@@ -4,7 +4,7 @@ use std::collections::{HashMap, BTreeMap};
 use std::process::Command;
 use std::io::{self, Write};
 use std::fmt;
-use colored::*; 
+use colored::*;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -64,10 +64,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else if let Some(info_list) = info_opt {
             for (i, info) in info_list.iter().enumerate() {
                 let colored_raw = colorize_line(&info.raw_line, &info.status);
-                if i == 0 { writeln!(stdout, "{} | {}", format!("{:<45}", pkg).bright_white(), colored_raw)?;
- } 
-                else { writeln!(stdout, "{:<45} | {}", "", colored_raw)?;
- }
+                if i == 0 { writeln!(stdout, "{} | {}", format!("{:<45}", pkg).bright_white(), colored_raw)?; }
+                else { writeln!(stdout, "{:<45} | {}", "", colored_raw)?; }
             }
             writeln!(stdout)?;
         }
@@ -104,16 +102,25 @@ fn print_block_entry(stdout: &mut io::Stdout, pkg: &str, info_opt: Option<&Vec<D
     Ok(())
 }
 
-fn colorize_line(line: &str, status: &str) -> String {
+fn get_status_color(status: &str) -> Color {
     match status {
-        "speed-profile" => line.green().to_string(),
-        "speed" => line.bright_green().to_string(),
-        "verify" => line.yellow().to_string(),
-        "quicken" => line.blue().to_string(),
-        "run-from-apk" => line.red().to_string(),
-        "error" => line.red().bold().to_string(),
-        "everything" => line.magenta().to_string(),
-        _ => line.white().to_string(),
+        "speed-profile" => Color::Green,
+        "speed" => Color::BrightGreen,
+        "verify" => Color::Yellow,
+        "quicken" => Color::Blue,
+        "run-from-apk" => Color::Red,
+        "error" => Color::Red,
+        "everything" => Color::Magenta,
+        _ => Color::White,
+    }
+}
+
+fn colorize_line(line: &str, status: &str) -> String {
+    let color = get_status_color(status);
+    if status == "error" {
+        line.color(color).bold().to_string()
+    } else {
+        line.color(color).to_string()
     }
 }
 
@@ -184,10 +191,7 @@ fn print_summary(total_apps: usize, stats: &BTreeMap<String, usize>, app_type: A
     }
     else {
         for (profile, count) in stats {
-            let color = match profile.as_str() {
-                "speed-profile" => Color::Green, "speed" => Color::BrightGreen, "verify" => Color::Yellow,
-                "quicken" => Color::Blue, "run-from-apk" => Color::Red, "error" => Color::Red, "everything" => Color::Magenta, _ => Color::White,
-            };
+            let color = get_status_color(profile);
             add_summary_line(profile, &count.to_string(), Color::Cyan, color, width);
         }
     }

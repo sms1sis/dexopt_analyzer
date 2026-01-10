@@ -92,8 +92,24 @@ fn print_block_entry(stdout: &mut io::Stdout, pkg: &str, info_opt: Option<&Vec<D
     writeln!(stdout, "{}", format!("└{}┘", border).cyan())?;
     
     if let Some(info_list) = info_opt {
+        let mut max_prefix_len = 0;
         for info in info_list {
-            writeln!(stdout, "  {}", colorize_line(&info.raw_line, &info.status))?;
+            if let Some(idx) = info.raw_line.find(':') {
+                if idx > max_prefix_len {
+                    max_prefix_len = idx;
+                }
+            }
+        }
+
+        for info in info_list {
+            let formatted_line = if let Some(idx) = info.raw_line.find(':') {
+                let prefix = &info.raw_line[..idx];
+                let rest = &info.raw_line[idx..]; 
+                format!("{:width$}{}", prefix, rest, width = max_prefix_len)
+            } else {
+                info.raw_line.clone()
+            };
+            writeln!(stdout, "  {}", colorize_line(&formatted_line, &info.status))?;
         }
     } else {
          writeln!(stdout, "  {}", "(no info found)".italic().red())?;

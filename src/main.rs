@@ -38,27 +38,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} Found {} packages.", prefix, packages.len().to_string().green().bold());
     let dump = get_dexopt_dump()?;
     let results = parse_dump(&dump);
-    println!("\n{} | {}", format!("{:<45}", "Package").bold().underline(), format!("{:<30}", "DexOpt Status").bold().underline());
+    
+    if !args.verbose {
+        println!("\n{} | {}\n", format!("{:<45}", "Package").bold().underline(), format!("{:<30}", "DexOpt Status").bold().underline());
+    }
+
     let mut stdout = io::stdout();
     let mut stats: BTreeMap<String, usize> = BTreeMap::new();
     let mut total_displayed = 0;
+    
     for pkg in &packages {
-        if let Some(ref f) = args.filter { if !pkg.contains(f) { continue; } }
-        if let Some(info_list) = results.get(pkg) {
+        if let Some(ref f) = args.filter { if !pkg.contains(f) { continue; } } 
+        
+        let info_opt = results.get(pkg);
+        
+        if let Some(info_list) = info_opt {
             total_displayed += 1;
-            for (i, info) in info_list.iter().enumerate() {
+            for info in info_list {
                 *stats.entry(info.status.clone()).or_insert(0) += 1;
+            }
+        } 
+        
+        if args.verbose {
+            print_block_entry(&mut stdout, pkg, info_opt)?;
+        } else if let Some(info_list) = info_opt {
+            for (i, info) in info_list.iter().enumerate() {
                 let colored_raw = colorize_line(&info.raw_line, &info.status);
-                if i == 0 { writeln!(stdout, "{} | {}", format!("{:<45}", pkg).bright_white(), colored_raw)?; }
+                if i == 0 { writeln!(stdout, "{} | {}", format!("{:<45}", pkg).bright_white(), colored_raw)?; } 
                 else { writeln!(stdout, "{:<45} | {}", "", colored_raw)?; }
             }
             writeln!(stdout)?;
-        } else if args.verbose {
-             writeln!(stdout, "{} | {}", format!("{:<45}", pkg).dimmed(), "(no info found in dump)".italic().red())?;
-             writeln!(stdout)?;
         }
     }
     print_summary(total_displayed, &stats, args.r#type);
+    Ok(())
+}
+
+fn print_block_entry(stdout: &mut io::Stdout, pkg: &str, info_opt: Option<&Vec<DexOptInfo>>) -> io::Result<()> {
+    let width = 60;
+    let border = "─".repeat(width);
+    writeln!(stdout, "{}", format!("┌{}┐", border).cyan())?;
+    
+    let pkg_display = if pkg.len() > width - 2 { &pkg[..width-2] } else { pkg };
+    writeln!(stdout, "{} {:<w$} {}", "│".cyan(), pkg_display.bold().bright_white(), "│".cyan(), w = width - 1)?;
+    
+    writeln!(stdout, "{}", format!("└{}┘", border).cyan())?;
+    
+    if let Some(info_list) = info_opt {
+        for info in info_list {
+            writeln!(stdout, "  {}", colorize_line(&info.raw_line, &info.status))?;
+        }
+    } else {
+         writeln!(stdout, "  {}", "(no info found)".italic().red())?;
+    }
+    writeln!(stdout)?;
     Ok(())
 }
 
@@ -92,13 +125,13 @@ fn get_dexopt_dump() -> Result<String, Box<dyn std::error::Error>> {
     Ok(String::from_utf8(output.stdout)?)
 }
 
-struct DexOptInfo { raw_line: String, status: String }
+struct DexOptInfo { raw_line: String, status: String } 
 
 fn parse_dump(dump: &str) -> HashMap<String, Vec<DexOptInfo>> {
     let mut results: HashMap<String, Vec<DexOptInfo>> = HashMap::new();
     let mut current_pkg: Option<String> = None;
     let status_re = Regex::new(r"(arm64:|arm:)").unwrap();
-    let filter_extract_re = Regex::new(r"\[(?:status|filter)=([^\]]+)\]").unwrap();
+    let filter_extract_re = Regex::new(r"\^\[(?:status|filter)=([^\]]+)\^\]").unwrap();
     for line in dump.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() { continue; }

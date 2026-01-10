@@ -1,10 +1,10 @@
 use clap::{Parser, ValueEnum};
-use regex::Regex;
-use std::collections::{HashMap, BTreeMap};
-use std::process::Command;
-use std::io::{self, Write};
-use std::fmt;
 use colored::*;
+use regex::Regex;
+use std::collections::{BTreeMap, HashMap};
+use std::fmt;
+use std::io::{self, Write};
+use std::process::Command;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -18,7 +18,11 @@ struct Args {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
-enum AppType { User, System, All }
+enum AppType {
+    User,
+    System,
+    All,
+}
 
 impl fmt::Display for AppType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -33,39 +37,64 @@ impl fmt::Display for AppType {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let prefix = "[-]".cyan();
-    println!("{} {} ({}) ...", prefix, "Fetching package list".bold(), args.r#type);
+    println!(
+        "{} {} ({}) ...",
+        prefix,
+        "Fetching package list".bold(),
+        args.r#type
+    );
     let packages = get_packages(args.r#type)?;
-    println!("{} Found {} packages.", prefix, packages.len().to_string().green().bold());
+    println!(
+        "{} Found {} packages.",
+        prefix,
+        packages.len().to_string().green().bold()
+    );
     let dump = get_dexopt_dump()?;
     let results = parse_dump(&dump);
-    
+
     if !args.verbose {
-        println!("\n{} | {}\n", format!("{:<45}", "Package").bold().underline(), format!("{:<30}", "DexOpt Status").bold().underline());
+        println!(
+            "\n{} | {}\n",
+            format!("{:<45}", "Package").bold().underline(),
+            format!("{:<30}", "DexOpt Status").bold().underline()
+        );
     }
 
     let mut stdout = io::stdout();
     let mut stats: BTreeMap<String, usize> = BTreeMap::new();
     let mut total_displayed = 0;
-    
+
     for pkg in &packages {
-        if let Some(ref f) = args.filter { if !pkg.contains(f) { continue; } } 
-        
+        if let Some(ref f) = args.filter {
+            if !pkg.contains(f) {
+                continue;
+            }
+        }
+
         let info_opt = results.get(pkg);
-        
+
         if let Some(info_list) = info_opt {
             total_displayed += 1;
             for info in info_list {
                 *stats.entry(info.status.clone()).or_insert(0) += 1;
             }
-        } 
-        
+        }
+
         if args.verbose {
             print_block_entry(&mut stdout, pkg, info_opt)?;
         } else if let Some(info_list) = info_opt {
             for (i, info) in info_list.iter().enumerate() {
                 let colored_raw = colorize_line(&info.raw_line, &info.status);
-                if i == 0 { writeln!(stdout, "{} | {}", format!("{:<45}", pkg).bright_white(), colored_raw)?; }
-                else { writeln!(stdout, "{:<45} | {}", "", colored_raw)?; }
+                if i == 0 {
+                    writeln!(
+                        stdout,
+                        "{} | {}",
+                        format!("{:<45}", pkg).bright_white(),
+                        colored_raw
+                    )?;
+                } else {
+                    writeln!(stdout, "{:<45} | {}", "", colored_raw)?;
+                }
             }
             writeln!(stdout)?;
         }
@@ -74,23 +103,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn print_block_entry(stdout: &mut io::Stdout, pkg: &str, info_opt: Option<&Vec<DexOptInfo>>) -> io::Result<()> {
+fn print_block_entry(
+    stdout: &mut io::Stdout,
+    pkg: &str,
+    info_opt: Option<&Vec<DexOptInfo>>,
+) -> io::Result<()> {
     let padding = 2;
     let min_width = 40;
     let content_len = pkg.len() + (padding * 2);
-    let width = if content_len > min_width { content_len } else { min_width };
-    
+    let width = if content_len > min_width {
+        content_len
+    } else {
+        min_width
+    };
+
     let border = "─".repeat(width);
     writeln!(stdout, "{}", format!("┌{}┐", border).cyan())?;
-    
+
     let p_space = width - pkg.len();
     let p_l = p_space / 2;
     let p_r = p_space - p_l;
-    
-    writeln!(stdout, "{}{}{}{}", "│".cyan(), " ".repeat(p_l), pkg.bold().bright_white(), format!("{}{}", " ".repeat(p_r), "│").cyan())?;
-    
+
+    writeln!(
+        stdout,
+        "{}{}{}{}",
+        "│".cyan(),
+        " ".repeat(p_l),
+        pkg.bold().bright_white(),
+        format!("{}{}", " ".repeat(p_r), "│").cyan()
+    )?;
+
     writeln!(stdout, "{}", format!("└{}┘", border).cyan())?;
-    
+
     if let Some(info_list) = info_opt {
         let mut max_prefix_len = 0;
         for info in info_list {
@@ -104,7 +148,7 @@ fn print_block_entry(stdout: &mut io::Stdout, pkg: &str, info_opt: Option<&Vec<D
         for info in info_list {
             let formatted_line = if let Some(idx) = info.raw_line.find(':') {
                 let prefix = &info.raw_line[..idx];
-                let rest = &info.raw_line[idx..]; 
+                let rest = &info.raw_line[idx..];
                 format!("{:width$}{}", prefix, rest, width = max_prefix_len)
             } else {
                 info.raw_line.clone()
@@ -112,7 +156,7 @@ fn print_block_entry(stdout: &mut io::Stdout, pkg: &str, info_opt: Option<&Vec<D
             writeln!(stdout, "  {}", colorize_line(&formatted_line, &info.status))?;
         }
     } else {
-         writeln!(stdout, "  {}", "(no info found)".italic().red())?;
+        writeln!(stdout, "  {}", "(no info found)".italic().red())?;
     }
     writeln!(stdout)?;
     Ok(())
@@ -141,24 +185,37 @@ fn colorize_line(line: &str, status: &str) -> String {
 }
 
 fn get_packages(app_type: AppType) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let output = Command::new("sh").arg("-c").arg(match app_type {
-        AppType::User => "pm list packages -3",
-        AppType::System => "pm list packages -s",
-        AppType::All => "pm list packages",
-    }).output()?;
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(match app_type {
+            AppType::User => "pm list packages -3",
+            AppType::System => "pm list packages -s",
+            AppType::All => "pm list packages",
+        })
+        .output()?;
     let raw = String::from_utf8(output.stdout)?;
     let mut list = Vec::new();
-    for line in raw.lines() { if let Some(p) = line.trim().strip_prefix("package:") { list.push(p.trim().to_string()); } }
+    for line in raw.lines() {
+        if let Some(p) = line.trim().strip_prefix("package:") {
+            list.push(p.trim().to_string());
+        }
+    }
     list.sort();
     Ok(list)
 }
 
 fn get_dexopt_dump() -> Result<String, Box<dyn std::error::Error>> {
-    let output = Command::new("sh").arg("-c").arg("dumpsys package dexopt").output()?;
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("dumpsys package dexopt")
+        .output()?;
     Ok(String::from_utf8(output.stdout)?)
 }
 
-struct DexOptInfo { raw_line: String, status: String } 
+struct DexOptInfo {
+    raw_line: String,
+    status: String,
+}
 
 fn parse_dump(dump: &str) -> HashMap<String, Vec<DexOptInfo>> {
     let mut results: HashMap<String, Vec<DexOptInfo>> = HashMap::new();
@@ -167,13 +224,26 @@ fn parse_dump(dump: &str) -> HashMap<String, Vec<DexOptInfo>> {
     let filter_extract_re = Regex::new(r"\[(?:status|filter)=([^\]]+)\]").unwrap();
     for line in dump.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
-        if trimmed.starts_with('[') && trimmed.ends_with(']') && !trimmed.contains(' ') && !trimmed.contains('=') {
-            current_pkg = Some(trimmed[1..trimmed.len()-1].to_string());
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with('[')
+            && trimmed.ends_with(']')
+            && !trimmed.contains(' ')
+            && !trimmed.contains('=')
+        {
+            current_pkg = Some(trimmed[1..trimmed.len() - 1].to_string());
         } else if let Some(ref pkg) = current_pkg {
             if status_re.is_match(trimmed) {
-                let status = filter_extract_re.captures(trimmed).and_then(|c| c.get(1)).map(|m| m.as_str().to_string()).unwrap_or_else(|| "unknown".to_string());
-                results.entry(pkg.clone()).or_default().push(DexOptInfo { raw_line: trimmed.to_string(), status });
+                let status = filter_extract_re
+                    .captures(trimmed)
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                results.entry(pkg.clone()).or_default().push(DexOptInfo {
+                    raw_line: trimmed.to_string(),
+                    status,
+                });
             }
         }
     }
@@ -189,23 +259,52 @@ fn print_summary(total_apps: usize, stats: &BTreeMap<String, usize>, app_type: A
     let title = "DEXOPT ANALYSIS SUMMARY";
     let p_s = (width - title.len()) / 2;
     let p_e = width - title.len() - p_s;
-    println!("{}{}{}{}", "║".color(b_blue), " ".repeat(p_s), title.bold().color(b_yellow), format!("{}{}", " ".repeat(p_e), "║").color(b_blue));
+    println!(
+        "{}{}{}{}",
+        "║".color(b_blue),
+        " ".repeat(p_s),
+        title.bold().color(b_yellow),
+        format!("{}{}", " ".repeat(p_e), "║").color(b_blue)
+    );
     let mid = format!("╠{}╣", "═".repeat(width));
     println!("{}", mid.color(b_blue));
-    add_summary_line("App Scope", &app_type.to_string(), Color::Cyan, Color::Magenta, width);
-    add_summary_line("Total Apps Checked", &total_apps.to_string(), Color::Cyan, Color::BrightGreen, width);
+    add_summary_line(
+        "App Scope",
+        &app_type.to_string(),
+        Color::Cyan,
+        Color::Magenta,
+        width,
+    );
+    add_summary_line(
+        "Total Apps Checked",
+        &total_apps.to_string(),
+        Color::Cyan,
+        Color::BrightGreen,
+        width,
+    );
     println!("{}", mid.color(b_blue));
     let sub = "Profile Breakdown";
     let p_s = (width - sub.len()) / 2;
     let p_e = width - sub.len() - p_s;
-    println!("{}{}{}{}", "║".color(b_blue), " ".repeat(p_s), sub.dimmed().bold(), format!("{}{}", " ".repeat(p_e), "║").color(b_blue));
+    println!(
+        "{}{}{}{}",
+        "║".color(b_blue),
+        " ".repeat(p_s),
+        sub.dimmed().bold(),
+        format!("{}{}", " ".repeat(p_e), "║").color(b_blue)
+    );
     println!("{}", mid.color(b_blue));
     if stats.is_empty() {
         let msg = "No profile data found.";
         let padding = " ".repeat(width.saturating_sub(2 + msg.len()));
-        println!("{}  {}{}{}", "║".color(b_blue), msg, padding, "║".color(b_blue));
-    }
-    else {
+        println!(
+            "{}  {}{}{}",
+            "║".color(b_blue),
+            msg,
+            padding,
+            "║".color(b_blue)
+        );
+    } else {
         for (profile, count) in stats {
             let color = get_status_color(profile);
             add_summary_line(profile, &count.to_string(), Color::Cyan, color, width);
@@ -218,5 +317,12 @@ fn add_summary_line(label: &str, value: &str, l_col: Color, v_col: Color, width:
     let l_part = format!("{:<22}", label).bold().color(l_col);
     let v_part = value.bold().color(v_col);
     let padding = " ".repeat(width.saturating_sub(5 + 22 + value.len()));
-    println!("{}  {} : {}{}{}", "║".color(Color::BrightBlue), l_part, v_part, padding, "║".color(Color::BrightBlue));
+    println!(
+        "{}  {} : {}{}{}",
+        "║".color(Color::BrightBlue),
+        l_part,
+        v_part,
+        padding,
+        "║".color(Color::BrightBlue)
+    );
 }

@@ -1,5 +1,6 @@
 use clap::{Parser, ValueEnum};
 use colored::*;
+use rayon::prelude::*;
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -64,13 +65,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stats: BTreeMap<String, usize> = BTreeMap::new();
     let mut total_displayed = 0;
 
-    for pkg in &packages {
-        if let Some(ref f) = args.filter {
-            if !pkg.name.contains(f) {
-                continue;
+    // Filter packages first
+    let filtered_packages: Vec<&Package> = packages
+        .iter()
+        .filter(|pkg| {
+            if let Some(ref f) = args.filter {
+                pkg.name.contains(f)
+            } else {
+                true
             }
-        }
+        })
+        .collect();
 
+    // Prepare data for printing.
+    // If verbose, we fetch labels in parallel.
+    // If not verbose, we just map with None labels.
+    let display_data: Vec<(&Package, Option<String>)> = if args.verbose {
+        filtered_packages
+            .par_iter()
+            .map(|pkg| {
+                let label = get_app_label(&pkg.path);
+                (*pkg, label)
+            })
+            .collect()
+    } else {
+        filtered_packages.iter().map(|pkg| (*pkg, None)).collect()
+    };
+
+    for (pkg, app_label) in display_data {
         let info_opt = results.get(&pkg.name);
 
         if let Some(info_list) = info_opt {
@@ -81,7 +103,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if args.verbose {
-            let app_label = get_app_label(&pkg.path);
             print_block_entry(&mut stdout, pkg, app_label, info_opt)?;
         } else if let Some(info_list) = info_opt {
             for (i, info) in info_list.iter().enumerate() {
@@ -100,6 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             writeln!(stdout)?;
         }
     }
+
     print_summary(total_displayed, &stats, args.r#type);
     Ok(())
 }
@@ -112,14 +134,14 @@ fn print_block_entry(
 ) -> io::Result<()> {
     let padding = 2;
     let min_width = 40;
-    
-    let display_name = if let Some(label) = app_label {
+
+    let display_name_str = if let Some(ref label) = app_label {
         format!("{} ({})", label, pkg.name)
     } else {
         pkg.name.clone()
     };
 
-    let content_len = display_name.len() + (padding * 2);
+    let content_len = display_name_str.len() + (padding * 2);
     let width = if content_len > min_width {
         content_len
     } else {
@@ -129,16 +151,27 @@ fn print_block_entry(
     let border = "─".repeat(width);
     writeln!(stdout, "{}", format!("┌{}┐", border).cyan())?;
 
-    let p_space = width - display_name.len();
+    let p_space = width - display_name_str.len();
     let p_l = p_space / 2;
     let p_r = p_space - p_l;
+
+    // Construct the inner colored string manually to allow different colors for label vs package
+    let inner_content = if let Some(ref label) = app_label {
+         format!(
+            "{} ({})",
+            label.bold().yellow(), 
+            pkg.name.white()
+        )
+    } else {
+        pkg.name.bold().bright_white().to_string()
+    };
 
     writeln!(
         stdout,
         "{}{}{}{}",
         "│".cyan(),
         " ".repeat(p_l),
-        display_name.bold().bright_white(),
+        inner_content,
         format!("{}{}", " ".repeat(p_r), "│").cyan()
     )?;
 
@@ -221,6 +254,9 @@ struct Package {
     path: String,
 }
 
+// Implement Sync for Package to allow parallel iteration (implied by default for String/String fields, but good to be aware of)
+// Strings are Send + Sync, so Package is Send + Sync.
+
 fn get_packages(app_type: AppType) -> Result<Vec<Package>, Box<dyn std::error::Error>> {
     let output = Command::new("sh")
         .arg("-c")
@@ -263,7 +299,7 @@ fn parse_dump(dump: &str) -> HashMap<String, Vec<DexOptInfo>> {
     let mut results: HashMap<String, Vec<DexOptInfo>> = HashMap::new();
     let mut current_pkg: Option<String> = None;
     let status_re = Regex::new(r"(arm64:|arm:)").unwrap();
-    let filter_extract_re = Regex::new(r"\[(?:status|filter)=([^\]]+)\]").unwrap();
+    let filter_extract_re = Regex::new(r"\b(?:status|filter)=([^\s]+)").unwrap();
     for line in dump.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {

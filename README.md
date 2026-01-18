@@ -1,4 +1,4 @@
-# DexOpt Analyzer
+# Dexter
 
 An advanced, high-performance Android DexOpt status analyzer written in Rust. This tool replaces slow shell scripts by efficiently parsing global package status from `dumpsys` and correlating it with installed apps.
 
@@ -29,13 +29,13 @@ An advanced, high-performance Android DexOpt status analyzer written in Rust. Th
 
 2. **Build from Source**:
    ```bash
-   git clone https://github.com/your-repo/dexopt_analyzer.git
-   cd dexopt_analyzer
+   git clone https://github.com/your-repo/dexter.git
+   cd dexter
    # We use system OpenSSL to avoid complex cross-compilation on Android
    OPENSSL_NO_VENDOR=1 cargo build --release
    ```
 
-The binary will be available at `target/release/dexopt_analyzer`.
+The binary will be available at `target/release/dexter`.
 
 ## Usage
 
@@ -43,30 +43,30 @@ Run the tool with root privileges:
 
 ```bash
 # Analyze User apps (default)
-su -c "./target/release/dexopt_analyzer"
+su -c "./target/release/dexter"
 
 # Analyze System apps
-su -c "./target/release/dexopt_analyzer -t system"
+su -c "./target/release/dexter -t system"
 
 # Show JSON output (useful for scripts)
-su -c "./target/release/dexopt_analyzer -j"
+su -c "./target/release/dexter -j"
 
 # Filter by Status (e.g., find unoptimized apps)
-su -c "./target/release/dexopt_analyzer -s run-from-apk"
+su -c "./target/release/dexter -s run-from-apk"
 
 # Filter by Name
-su -c "./target/release/dexopt_analyzer -f google"
+su -c "./target/release/dexter -f google"
 ```
 
 ### Options
 
 ```text
-Usage: dexopt_analyzer [OPTIONS]
+Usage: dexter [OPTIONS]
 
 Options:
   -f, --filter <FILTER>  Filter packages by name (substring match)
   -s, --status <STATUS>  Filter by specific dexopt status (e.g., 'speed', 'verify', 'error')
-  -t, --type <TYPE>      Select which type of packages to analyze [default: user] [possible values: user, system, all]
+  -t, --type <TYPE>      Type of applications to analyze [default: user] [possible values: user, system, all]
   -v, --verbose          Show detailed information for each package
   -j, --json             Output results as JSON
   -h, --help             Print help

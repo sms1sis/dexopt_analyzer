@@ -1,11 +1,11 @@
 [package]
-name = "dexopt_analyzer"
+name = "dexter"
 version = "0.2.0"
 edition = "2024"
 authors = ["sms1sis sadimsajid2004@gmail.com"]
 license = "MIT"
 description = "A tool to analyze dexopt on android"
-repository = "https://github.com/sms1sis/dexopt_analyzer"
+repository = "https://github.com/sms1sis/dexter"
 categories = ["command-line-utilities"]
 
 [dependencies]
@@ -13,7 +13,12 @@ anyhow = "1.0.100"
 apk-info = "1.0.9"
 clap = { version = "4.5.54", features = ["derive"] }
 colored = "3.0.0"
+nix = { version = "0.30.1", features = ["user"] }
 once_cell = "1.21.3"
 rayon = "1.11.0"
 regex = "1.12.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+terminal_size = "0.4.3"
 thiserror = "2.0.17"
+unicode-width = "0.2.2"

@@ -86,20 +86,59 @@ impl Package {
 
     /// Gets the application label from the APK file.
     fn get_label(&self) -> Option<String> {
-        Apk::new(&self.path).ok()?.get_application_label().and_then(|label| {
-            let clean = label.trim().replace(['\r', '\n'], " ");
-            if clean.is_empty() {
-                return None;
-            }
-
-            // Heuristic: Filter out internal class names
-            if clean.contains('.') && !clean.contains(' ') && clean != self.name {
-                if clean.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_') {
-                    return None;
+        // 1. Try native parsing (Fast)
+        if let Ok(apk) = Apk::new(&self.path) {
+            if let Some(label) = apk.get_application_label() {
+                let clean = label.trim().replace(['\r', '\n'], " ");
+                if !clean.is_empty() {
+                    // Heuristic: Filter out internal class names
+                    // If it looks like a java package/class (dots, no spaces) and isn't the package name itself
+                    let is_class_name = clean.contains('.') && !clean.contains(' ') && clean != self.name;
+                    // Additional check: valid class chars
+                    let looks_like_class = clean.chars().all(|c: char| c.is_alphanumeric() || c == '.' || c == '_');
+                    
+                    if !is_class_name || !looks_like_class {
+                         return Some(clean);
+                    }
                 }
             }
-            Some(clean)
-        })
+        }
+
+        // 2. Fallback to aapt (Slow but Universal)
+        // Only runs if native failed or returned a suspicious label
+        self.get_label_from_aapt()
+    }
+
+    fn get_label_from_aapt(&self) -> Option<String> {
+        let output = Command::new("aapt")
+            .arg("dump")
+            .arg("badging")
+            .arg(&self.path)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let trimmed = line.trim();
+            if let Some(label) = trimmed.strip_prefix("application-label:'") {
+                if let Some(end) = label.find('\'') {
+                    return Some(label[..end].to_string());
+                }
+            }
+        }
+        None
+    }
+
+    fn is_aapt_available() -> bool {
+        Command::new("which")
+            .arg("aapt")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
     }
 }
 
@@ -390,6 +429,18 @@ fn main() -> Result<()> {
     }
 
     UI::print_summary(total_displayed, &stats, args.r#type);
+
+    if args.verbose && !Package::is_aapt_available() {
+        println!();
+        eprintln!(
+            "{}",
+            "Warning: 'aapt' is not installed. Some application labels might be missing.".yellow().bold()
+        );
+        eprintln!(
+            "{}",
+            "Install it via 'pkg install aapt' for the best experience.".yellow().bold()
+        );
+    }
 
     Ok(())
 }

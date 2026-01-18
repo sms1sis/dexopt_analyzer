@@ -81,6 +81,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.100"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
+
+[[package]]
 name = "apk-info"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -275,11 +281,14 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 name = "dexopt_analyzer"
 version = "0.1.15"
 dependencies = [
+ "anyhow",
  "apk-info",
  "clap",
  "colored",
+ "once_cell",
  "rayon",
  "regex",
+ "thiserror",
 ]
 
 [[package]]

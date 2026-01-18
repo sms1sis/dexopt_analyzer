@@ -159,9 +159,9 @@ fn print_block_entry(
     let inner_content = if let Some(ref label) = app_label {
          format!(
             "{} ({})",
-            label, 
-            pkg.name
-        ).bold().bright_white().to_string()
+            label.bold().yellow(), 
+            pkg.name.bold().bright_white()
+        )
     } else {
         pkg.name.bold().bright_white().to_string()
     };
@@ -249,7 +249,7 @@ fn get_app_label(path: &str, pkg_name: &str) -> Option<String> {
 fn get_status_color(status: &str) -> Color {
     match status {
         "speed-profile" => Color::Green,
-        "speed" => Color::BrightGreen,
+        "speed" => Color::Green,
         "verify" => Color::Yellow,
         "quicken" => Color::Blue,
         "run-from-apk" => Color::Red,

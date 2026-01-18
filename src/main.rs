@@ -84,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         filtered_packages
             .par_iter()
             .map(|pkg| {
-                let label = get_app_label(&pkg.path);
+                let label = get_app_label(&pkg.path, &pkg.name);
                 (*pkg, label)
             })
             .collect()
@@ -159,9 +159,9 @@ fn print_block_entry(
     let inner_content = if let Some(ref label) = app_label {
          format!(
             "{} ({})",
-            label.bold().yellow(), 
-            pkg.name.white()
-        )
+            label, 
+            pkg.name
+        ).bold().bright_white().to_string()
     } else {
         pkg.name.bold().bright_white().to_string()
     };
@@ -204,7 +204,8 @@ fn print_block_entry(
     Ok(())
 }
 
-fn get_app_label(path: &str) -> Option<String> {
+fn get_app_label(path: &str, pkg_name: &str) -> Option<String> {
+    // Primary method: aapt dump badging
     let output = Command::new("aapt")
         .arg("dump")
         .arg("badging")
@@ -212,17 +213,36 @@ fn get_app_label(path: &str) -> Option<String> {
         .output()
         .ok()?;
 
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            let trimmed = line.trim();
-            if let Some(label) = trimmed.strip_prefix("application-label:'") {
-                if let Some(end) = label.find('\'') {
-                    return Some(label[..end].to_string());
-                }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if let Some(label) = trimmed.strip_prefix("application-label:'") {
+            if let Some(end) = label.find('\'') {
+                return Some(label[..end].to_string());
             }
         }
     }
+
+    // Fallback: pm dump (might contain label)
+    let pm_output = Command::new("pm")
+        .arg("dump")
+        .arg(pkg_name)
+        .output()
+        .ok()?;
+    
+    let pm_stdout = String::from_utf8_lossy(&pm_output.stdout);
+    for line in pm_stdout.lines() {
+        let trimmed = line.trim();
+        // Look for something like "label=Termux" or similar in dump output
+        if let Some(idx) = trimmed.find("label=") {
+             let label_part = &trimmed[idx+6..];
+             if let Some(end) = label_part.find(' ') {
+                 return Some(label_part[..end].to_string());
+             }
+             return Some(label_part.to_string());
+        }
+    }
+
     None
 }
 

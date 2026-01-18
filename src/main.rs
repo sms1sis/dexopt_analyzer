@@ -363,7 +363,7 @@ fn parse_dump(dump: &str) -> HashMap<String, Vec<DexOptInfo>> {
     let mut results: HashMap<String, Vec<DexOptInfo>> = HashMap::new();
     let mut current_pkg: Option<String> = None;
     let status_re = Regex::new(r"(arm64:|arm:)").unwrap();
-    let filter_extract_re = Regex::new(r"\b(?:status|filter)=([^\s]+)").unwrap();
+    let filter_extract_re = Regex::new(r"\b(?:status|filter)=([^\]\s]+)").unwrap();
     for line in dump.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -449,7 +449,7 @@ fn print_summary(total_apps: usize, stats: &BTreeMap<String, usize>, app_type: A
     } else {
         for (profile, count) in stats {
             let color = get_status_color(profile);
-            add_summary_line(profile, &count.to_string(), color, color, width);
+            add_summary_line(profile, &count.to_string(), Color::Cyan, color, width);
         }
     }
     println!("{}", format!("╚{}╝", "═".repeat(width)).color(b_blue));

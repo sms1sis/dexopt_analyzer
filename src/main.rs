@@ -212,7 +212,7 @@ fn print_block_entry(
     Ok(())
 }
 
-fn get_app_label(path: &str, pkg_name: &str) -> Option<String> {
+fn get_app_label(path: &str, _pkg_name: &str) -> Option<String> {
     match Apk::new(path) {
         Ok(apk) => {
              match apk.get_application_label() {

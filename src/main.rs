@@ -37,6 +37,14 @@ impl fmt::Display for AppType {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    if args.verbose && !check_aapt_installed() {
+        eprintln!(
+            "{}",
+            "Warning: 'aapt' is not installed. Application labels will not be displayed. Install it via 'pkg install aapt'.".yellow().bold()
+        );
+    }
+
     let prefix = "[-]".cyan();
     println!(
         "{} {} ({}) ...",
@@ -413,15 +421,45 @@ fn print_summary(total_apps: usize, stats: &BTreeMap<String, usize>, app_type: A
 }
 
 fn add_summary_line(label: &str, value: &str, l_col: Color, v_col: Color, width: usize) {
+
     let l_part = format!("{:<22}", label).bold().color(l_col);
+
     let v_part = value.bold().color(v_col);
+
     let padding = " ".repeat(width.saturating_sub(5 + 22 + value.len()));
+
     println!(
+
         "{}  {} : {}{}{}",
+
         "║".color(Color::BrightBlue),
+
         l_part,
+
         v_part,
+
         padding,
+
         "║".color(Color::BrightBlue)
+
     );
+
 }
+
+
+
+fn check_aapt_installed() -> bool {
+
+    Command::new("which")
+
+        .arg("aapt")
+
+        .output()
+
+        .map(|output| output.status.success())
+
+        .unwrap_or(false)
+
+}
+
+

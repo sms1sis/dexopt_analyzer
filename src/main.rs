@@ -156,11 +156,11 @@ fn print_block_entry(
     let p_r = p_space - p_l;
 
     // Construct the inner colored string manually to allow different colors for label vs package
-    // App Name is highlighted in Magenta to stand out, distinct from status colors.
+    // App Name is highlighted in Cyan to stand out, distinct from status colors.
     let inner_content = if let Some(ref label) = app_label {
          format!(
             "{} ({})",
-            label.bold().magenta(), 
+            label.bold().cyan(), 
             pkg.name.bold().bright_white()
         )
     } else {

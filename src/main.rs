@@ -50,6 +50,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         prefix,
         packages.len().to_string().green().bold()
     );
+    println!(
+        "{} {}",
+        prefix,
+        "Fetching dexopt dump...".bold()
+    );
     let dump = get_dexopt_dump()?;
     let results = parse_dump(&dump);
 
@@ -218,7 +223,7 @@ fn print_block_entry(
     Ok(())
 }
 
-fn get_app_label(path: &str, pkg_name: &str) -> Option<String> {
+fn get_app_label(path: &str, _pkg_name: &str) -> Option<String> {
     // Primary method: aapt dump badging
     let output = Command::new("aapt")
         .arg("dump")
@@ -227,6 +232,10 @@ fn get_app_label(path: &str, pkg_name: &str) -> Option<String> {
         .output()
         .ok()?;
 
+    if !output.status.success() {
+        return None;
+    }
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
         let trimmed = line.trim();
@@ -234,26 +243,6 @@ fn get_app_label(path: &str, pkg_name: &str) -> Option<String> {
             if let Some(end) = label.find('\'') {
                 return Some(label[..end].to_string());
             }
-        }
-    }
-
-    // Fallback: pm dump (might contain label)
-    let pm_output = Command::new("pm")
-        .arg("dump")
-        .arg(pkg_name)
-        .output()
-        .ok()?;
-    
-    let pm_stdout = String::from_utf8_lossy(&pm_output.stdout);
-    for line in pm_stdout.lines() {
-        let trimmed = line.trim();
-        // Look for something like "label=Termux" or similar in dump output
-        if let Some(idx) = trimmed.find("label=") {
-             let label_part = &trimmed[idx+6..];
-             if let Some(end) = label_part.find(' ') {
-                 return Some(label_part[..end].to_string());
-             }
-             return Some(label_part.to_string());
         }
     }
 

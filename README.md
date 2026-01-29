@@ -8,6 +8,7 @@ An advanced, high-performance Android DexOpt status analyzer written in Rust. Th
 - **Robust Label Resolution**: Uses a hybrid approach (Native Parsing + `aapt` fallback) to correctly identify app names, even for split APKs.
 - **Visuals**: Unicode-aware, perfectly aligned boxes that respect your terminal width.
 - **Advanced Filtering**: Filter by package name or **DexOpt Status** (e.g., find all `error` or `run-from-apk` apps).
+- **App Optimization**: Force optimize specific apps or trigger a system-wide background dexopt job.
 - **JSON Output**: Export structured data for automation and scripts.
 - **Root Check**: Built-in validation to ensure proper privileges.
 
@@ -56,6 +57,12 @@ su -c "./target/release/dexter -s run-from-apk"
 
 # Filter by Name
 su -c "./target/release/dexter -f google"
+
+# Optimize a specific package (clears profiles then compiles to 'speed')
+su -c "./target/release/dexter -o com.example.app"
+
+# Trigger system background dexopt job (bg-dexopt-job)
+su -c "./target/release/dexter -o all"
 ```
 
 ### Options
@@ -64,13 +71,14 @@ su -c "./target/release/dexter -f google"
 Usage: dexter [OPTIONS]
 
 Options:
-  -f, --filter <FILTER>  Filter packages by name (substring match)
-  -s, --status <STATUS>  Filter by specific dexopt status (e.g., 'speed', 'verify', 'error')
-  -t, --type <TYPE>      Type of applications to analyze [default: user] [possible values: user, system, all]
-  -v, --verbose          Show detailed information for each package
-  -j, --json             Output results as JSON
-  -h, --help             Print help
-  -V, --version          Print version
+  -f, --filter <FILTER>    Filter packages by name (substring match)
+  -s, --status <STATUS>    Filter by specific dexopt status (e.g., 'speed', 'verify', 'error')
+  -t, --type <TYPE>        Type of applications to analyze [default: user] [possible values: user, system, all]
+  -v, --verbose            Show detailed information for each package
+  -j, --json               Output results as JSON
+  -o, --optimize <TARGET>  Optimize application(s). Use 'all' for background dexopt job, or specify a package name
+  -h, --help               Print help
+  -V, --version            Print version
 ```
 
 ## License

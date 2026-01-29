@@ -35,6 +35,10 @@ struct Args {
     /// Output results as JSON
     #[arg(short, long)]
     json: bool,
+
+    /// Optimize application(s). Use 'all' for background dexopt job, or specify a package name.
+    #[arg(short = 'o', long = "optimize")]
+    optimize: Option<String>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
@@ -558,6 +562,51 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let prefix = "[-]".cyan();
+
+    if let Some(ref target) = args.optimize {
+        let msg = if target == "all" {
+            "Triggering background dexopt job...".to_string().bold()
+        } else {
+            format!("Optimizing package: {}", target).bold()
+        };
+        println!("{} {}", prefix, msg);
+
+        if target == "all" {
+            let status = Command::new("su")
+                .arg("-c")
+                .arg("cmd package bg-dexopt-job")
+                .status()
+                .with_context(|| "Failed to execute background optimization")?;
+
+            if !status.success() {
+                eprintln!("{} Optimization command failed.", prefix);
+            }
+        } else {
+            // clear profiles
+            let cmd1 = format!("pm art clear-app-profiles {}", target);
+            let status1 = Command::new("su")
+                .arg("-c")
+                .arg(&cmd1)
+                .status()
+                .with_context(|| "Failed to clear app profiles")?;
+
+            if !status1.success() {
+                eprintln!("{} Failed to clear app profiles for {}", prefix, target);
+            }
+
+            // compile
+            let cmd2 = format!("cmd package compile -m speed -f {}", target);
+            let status2 = Command::new("su")
+                .arg("-c")
+                .arg(&cmd2)
+                .status()
+                .with_context(|| "Failed to compile package")?;
+
+            if !status2.success() {
+                eprintln!("{} Failed to compile {}", prefix, target);
+            }
+        }
+    }
 
     if !args.json {
         let msg = "Fetching package list".bold();

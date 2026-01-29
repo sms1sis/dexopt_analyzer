@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1] - 2026-01-29
+
+### 🛠 Improvements
+* **Optimization Workflow:** 
+    * Automatically enables verbose output (`-v`) after optimization for a cleaner and more detailed status view.
+    * Automatically filters the results to the targeted package when optimizing a specific app, eliminating noise from other packages.
+
 ## [0.3.0] - 2026-01-29
 
 ### ✨ Features

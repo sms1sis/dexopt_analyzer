@@ -559,7 +559,18 @@ fn check_root() -> Result<()> {
 
 fn main() -> Result<()> {
     check_root()?;
-    let args = Args::parse();
+    let mut args = Args::parse();
+
+    // Adjust behavior when optimization is requested
+    if let Some(ref target) = args.optimize {
+        // User prefers verbose output (block style) when checking status after optimization
+        args.verbose = true;
+
+        // If optimizing a specific package, auto-filter to show only that package's status
+        if target != "all" && args.filter.is_none() {
+            args.filter = Some(target.clone());
+        }
+    }
 
     let prefix = "[-]".cyan();
 

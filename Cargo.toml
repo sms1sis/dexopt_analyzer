@@ -2,11 +2,12 @@
 name = "dexter"
 version = "0.3.1"
 edition = "2024"
-authors = ["sms1sis sadimsajid2004@gmail.com"]
+authors = ["sms1sis <sadimsajid2004@gmail.com>"]
 license = "GPL-3.0-or-later"
-description = "A tool to analyze dexopt on android"
+description = "A command-line tool to analyze dexopt state and artifacts on Android"
 repository = "https://github.com/sms1sis/dexter"
-categories = ["command-line-utilities"]
+categories = ["command-line-utilities", "os::android"]
+keywords = ["android", "dexopt", "dex", "art", "dalvik"]
 
 [dependencies]
 anyhow = "1.0.100"

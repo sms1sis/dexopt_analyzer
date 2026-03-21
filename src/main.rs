@@ -1,7 +1,9 @@
 use apk_info::Apk;
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use colored::*;use rayon::prelude::*;use regex::Regex;
+use colored::*;
+use rayon::prelude::*;
+use regex::Regex;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::io::{self, Write};
@@ -74,7 +76,6 @@ impl Package {
             AppType::All => "",
         };
 
-        // Performance: Execute `pm` directly instead of `sh -c`
         let mut cmd = Command::new("pm");
         cmd.arg("list").arg("packages").arg("-f");
         if !filter_flag.is_empty() {
@@ -104,24 +105,52 @@ impl Package {
 
     /// Gets the application label from the APK file.
     fn get_label(&self) -> Option<String> {
-        // 1. Try native parsing (Fast)
+        // 1. aapt: resolves string resources directly from the APK — most accurate
+        if let Some(label) = self.get_label_from_aapt() {
+            return Some(label);
+        }
+
+        // 2. apk-info native parsing: fast fallback when aapt is unavailable
         if let Ok(apk) = Apk::new(&self.path) {
             if let Some(label) = apk.get_application_label() {
                 let clean = label.trim().replace(['\r', '\n'], " ");
-                if !clean.is_empty() {
-                    // Heuristic: Filter out internal class names
-                    let is_class_name = clean.contains('.') && !clean.contains(' ') && clean != self.name;
-                    let looks_like_class = clean.chars().all(|c: char| c.is_alphanumeric() || c == '.' || c == '_');
-                    
-                    if !is_class_name || !looks_like_class {
-                         return Some(clean);
-                    }
+                if !clean.is_empty() && Self::is_valid_label(&clean) {
+                    return Some(clean);
                 }
             }
         }
 
-        // 2. Fallback to aapt (Slow but Universal)
-        self.get_label_from_aapt()
+        None
+    }
+
+    /// Returns true if the string looks like a real human-readable app label.
+    /// Rejects resource refs, class names, URLs, JSON blobs, and other garbage
+    /// that some APKs mistakenly store in the application-label field.
+    fn is_valid_label(label: &str) -> bool {
+        // Resource reference e.g. "@0x1040001"
+        if label.starts_with('@') {
+            return false;
+        }
+        // URL e.g. "https://www.facebook.com/.well-known/..."
+        if label.starts_with("http://") || label.starts_with("https://") {
+            return false;
+        }
+        // JSON blob e.g. "[{ \"include\": ... }]" or "{ ... }"
+        if label.starts_with('[') || label.starts_with('{') {
+            return false;
+        }
+        // Bare package/class name e.g. "com.facebook.katana" or "com.foo.MainActivity"
+        let is_class_like = label.contains('.')
+            && !label.contains(' ')
+            && label.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '$');
+        if is_class_like {
+            return false;
+        }
+        // Suspiciously long strings are almost certainly not a real label
+        if label.len() > 64 {
+            return false;
+        }
+        true
     }
 
     fn get_label_from_aapt(&self) -> Option<String> {
@@ -140,7 +169,7 @@ impl Package {
         for line in stdout.lines() {
             let trimmed = line.trim();
             if let Some(label) = trimmed.strip_prefix("application-label:'") {
-                if let Some(end) = label.find('‘') {
+                if let Some(end) = label.find('\'') {
                     return Some(label[..end].to_string());
                 }
             }
@@ -170,21 +199,17 @@ struct Analyzer {
 }
 
 static STATUS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(arm64:|arm:)").expect("Invalid regex for status"));
-static FILTER_EXTRACT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(?:status|filter)=([^]\s]+)").expect("Invalid regex for filter extraction"));
+static FILTER_EXTRACT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(?:status|filter)=([^\]\s]+)").expect("Invalid regex for filter extraction"));
 
 impl Analyzer {
-    /// Fetches the dexopt dump from `dumpsys package dexopt`.
     fn fetch_dump() -> Result<String> {
-        // Performance: Execute `dumpsys` directly
         let output = Command::new("dumpsys")
             .arg("package")
             .arg("dexopt")
             .output()?;
-
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
 
-    /// Parses the dumpsys output into a structured map.
     fn new(dump: &str) -> Self {
         let mut results: HashMap<String, Vec<DexOptInfo>> = HashMap::new();
         let mut current_pkg: Option<String> = None;
@@ -256,233 +281,121 @@ impl UI {
         );
     }
 
-        fn print_block_entry(
+    fn print_block_entry(
+        stdout: &mut io::Stdout,
+        pkg: &Package,
+        app_label: Option<&str>,
+        info_list: Option<&Vec<DexOptInfo>>,
+    ) -> io::Result<()> {
+        let min_width: usize = 40;
 
-            stdout: &mut io::Stdout,
+        let max_term_width = if let Some((Width(w), _)) = terminal_size() {
+            (w as usize).saturating_sub(4)
+        } else {
+            120
+        };
 
-            pkg: &Package,
+        // Build plain (no ANSI) display name for accurate width measurement
+        let full_display_name = match app_label {
+            Some(label) => format!("{} ({})", label, pkg.name),
+            None => pkg.name.clone(),
+        };
 
-            app_label: Option<&str>,
-
-            info_list: Option<&Vec<DexOptInfo>>,
-
-        ) -> io::Result<()> {
-
-            let min_width = 40;
-
-            
-
-            // Calculate max available width from terminal size
-
-            let max_term_width = if let Some((Width(w), _)) = terminal_size() {
-
-                (w as usize).saturating_sub(4) // Leave some margin
-
-            } else {
-
-                120 // Default fallback
-
-            };
-
-    
-
-            // Construct display name
-
-            let full_display_name = match app_label {
-
-                Some(label) => format!("{} ({})", label, pkg.name),
-
-                None => pkg.name.clone(),
-
-            };
-
-    
-
-            // Truncate if too long for terminal
-
-            let display_name = if full_display_name.width() > max_term_width {
-
-                // Simple truncation (could be improved with unicode-aware truncation)
-
-                let mut truncated = String::new();
-
-                let mut width = 0;
-
-                for c in full_display_name.chars() {
-
-                    let c_width = UnicodeWidthStr::width(c.to_string().as_str());
-
-                    if width + c_width > max_term_width - 3 {
-
-                        truncated.push_str("...");
-
-                        break;
-
-                    }
-
-                    truncated.push(c);
-
-                    width += c_width;
-
+        // Unicode-aware truncation
+        let display_name: String = if full_display_name.width() > max_term_width {
+            let mut truncated = String::new();
+            let mut w = 0usize;
+            for c in full_display_name.chars() {
+                let cw = UnicodeWidthStr::width(c.to_string().as_str());
+                if w + cw > max_term_width.saturating_sub(3) {
+                    truncated.push_str("...");
+                    break;
                 }
-
-                truncated
-
-            } else {
-
-                full_display_name
-
-            };
-
-    
-
-            let content_width = display_name.width();
-
-            let box_width = (content_width + 4).max(min_width);
-
-            
-
-            // Ensure box doesn't exceed terminal even after min_width logic
-
-            let box_width = box_width.min(max_term_width + 4); 
-
-            
-
-            let border = "─".repeat(box_width);
-
-    
-
-            writeln!(stdout, "{}", format!("┌{}┐", border).cyan())?;
-
-    
-
-            let p_space = box_width.saturating_sub(content_width);
-
-            let p_l = p_space / 2;
-
-            let p_r = p_space - p_l;
-
-    
-
-            // Reconstruct inner content with colors, using the (potentially truncated) display_name parts
-
-            // Note: If we truncated, we can't easily colorize parts separately without complex logic.
-
-            // For simplicity/robustness, if truncated, we colorize the whole string.
-
-            // If not truncated, we use the fancy split coloring.
-
-            
-
-            let inner_content = if display_name.ends_with("...") {
-
-                 display_name.bold().bright_white().to_string()
-
-            } else {
-
-                 match app_label {
-
-                    Some(label) => format!(
-
-                        "{} ({})",
-
-                        label.bold().cyan(), 
-
-                        pkg.name.bold().bright_white()
-
-                    ),
-
-                    None => pkg.name.bold().bright_white().to_string(),
-
-                }
-
-            };
-
-    
-
-            writeln!(
-
-                stdout,
-
-                "{}{}{}{}",
-
-                "│".cyan(),
-
-                " ".repeat(p_l),
-
-                inner_content,
-
-                format!("{}{}", " ".repeat(p_r), "│").cyan()
-
-            )?;
-
-    
-
-            writeln!(stdout, "{}", format!("└{}┘", border).cyan())?;
-
-    
-
-            if let Some(infos) = info_list {
-
-                let max_prefix_len = infos
-
-                    .iter()
-
-                    .filter_map(|i| i.raw_line.find(':'))
-
-                    .max()
-
-                    .unwrap_or(0);
-
-    
-
-                for info in infos {
-
-                    // Truncate dexopt info lines too if they are super long
-
-                    let raw_line = if info.raw_line.width() > max_term_width {
-
-                         let mut s = info.raw_line.chars().take(max_term_width - 3).collect::<String>();
-
-                         s.push_str("...");
-
-                         s
-
-                    } else {
-
-                        info.raw_line.clone()
-
-                    };
-
-    
-
-                    let formatted = if let Some(idx) = raw_line.find(':') {
-
-                        let (prefix, rest) = raw_line.split_at(idx);
-
-                        format!("{:width$}{}", prefix, rest, width = max_prefix_len)
-
-                    } else {
-
-                        raw_line
-
-                    };
-
-                    writeln!(stdout, "  {}", Self::colorize_line(&formatted, &info.status))?;
-
-                }
-
-            } else {
-
-                writeln!(stdout, "  {}", "(no info found)".italic().red())?;
-
+                truncated.push(c);
+                w += cw;
             }
+            truncated
+        } else {
+            full_display_name
+        };
 
-            writeln!(stdout)?;
+        // content_width = visual width of the plain text (no ANSI)
+        let content_width = display_name.width();
+        // box_width = number of ─ chars; actual rendered line is │ + ─*box_width + │
+        let box_width = (content_width + 4).max(min_width).min(max_term_width);
 
-            Ok(())
+        let border = "─".repeat(box_width);
+        writeln!(stdout, "{}", format!("┌{}┐", border).cyan())?;
 
+        // Padding: p_l + content_width + p_r == box_width (inner space between │ │)
+        let p_space = box_width.saturating_sub(content_width);
+        let p_l = p_space / 2;
+        let p_r = p_space - p_l;
+
+        // Build colorized version — ANSI bytes don't affect terminal column positions
+        let inner_content = if display_name.ends_with("...") {
+            display_name.bold().bright_white().to_string()
+        } else {
+            match app_label {
+                Some(_) => {
+                    let pkg_suffix = format!(" ({})", pkg.name);
+                    if display_name.ends_with(&pkg_suffix) {
+                        let label_part = &display_name[..display_name.len() - pkg_suffix.len()];
+                        format!(
+                            "{} ({})",
+                            label_part.bold().cyan(),
+                            pkg.name.bold().bright_white()
+                        )
+                    } else {
+                        // Suffix was truncated — colour whole string
+                        display_name.bold().bright_white().to_string()
+                    }
+                }
+                None => display_name.bold().bright_white().to_string(),
+            }
+        };
+
+        writeln!(
+            stdout,
+            "{}{}{}{}",
+            "│".cyan(),
+            " ".repeat(p_l),
+            inner_content,
+            format!("{}{}", " ".repeat(p_r), "│").cyan()
+        )?;
+
+        writeln!(stdout, "{}", format!("└{}┘", border).cyan())?;
+
+        if let Some(infos) = info_list {
+            let max_prefix_len = infos
+                .iter()
+                .filter_map(|i| i.raw_line.find(':'))
+                .max()
+                .unwrap_or(0);
+
+            for info in infos {
+                let raw_line = if info.raw_line.width() > max_term_width {
+                    let mut s = info.raw_line.chars().take(max_term_width - 3).collect::<String>();
+                    s.push_str("...");
+                    s
+                } else {
+                    info.raw_line.clone()
+                };
+
+                let formatted = if let Some(idx) = raw_line.find(':') {
+                    let (prefix, rest) = raw_line.split_at(idx);
+                    format!("{:width$}{}", prefix, rest, width = max_prefix_len)
+                } else {
+                    raw_line
+                };
+                writeln!(stdout, "  {}", Self::colorize_line(&formatted, &info.status))?;
+            }
+        } else {
+            writeln!(stdout, "  {}", "(no info found)".italic().red())?;
         }
+        writeln!(stdout)?;
+        Ok(())
+    }
 
     fn print_summary(total_apps: usize, stats: &BTreeMap<String, usize>, app_type: AppType) {
         let width = 47;
@@ -490,7 +403,7 @@ impl UI {
         let b_yellow = Color::BrightYellow;
 
         println!("\n\n{}", format!("╔{}╗", "═".repeat(width)).color(b_blue));
-        
+
         let title = "DEXOPT ANALYSIS SUMMARY";
         let p_s = (width - title.len()) / 2;
         let p_e = width - title.len() - p_s;
@@ -504,10 +417,10 @@ impl UI {
 
         let mid = format!("╠{}╣", "═".repeat(width)).color(b_blue);
         println!("{}", mid);
-        
+
         Self::add_summary_line("App Scope", &app_type.to_string(), Color::Cyan, Color::Magenta, width);
         Self::add_summary_line("Total Apps Checked", &total_apps.to_string(), Color::Cyan, Color::BrightGreen, width);
-        
+
         println!("{}", mid);
         let sub = "Profile Breakdown";
         let p_s = (width - sub.len()) / 2;
@@ -561,12 +474,8 @@ fn main() -> Result<()> {
     check_root()?;
     let mut args = Args::parse();
 
-    // Adjust behavior when optimization is requested
     if let Some(ref target) = args.optimize {
-        // User prefers verbose output (block style) when checking status after optimization
         args.verbose = true;
-
-        // If optimizing a specific package, auto-filter to show only that package's status
         if target != "all" && args.filter.is_none() {
             args.filter = Some(target.clone());
         }
@@ -588,31 +497,26 @@ fn main() -> Result<()> {
                 .arg("cmd package bg-dexopt-job")
                 .status()
                 .with_context(|| "Failed to execute background optimization")?;
-
             if !status.success() {
                 eprintln!("{} Optimization command failed.", prefix);
             }
         } else {
-            // clear profiles
             let cmd1 = format!("pm art clear-app-profiles {}", target);
             let status1 = Command::new("su")
                 .arg("-c")
                 .arg(&cmd1)
                 .status()
                 .with_context(|| "Failed to clear app profiles")?;
-
             if !status1.success() {
                 eprintln!("{} Failed to clear app profiles for {}", prefix, target);
             }
 
-            // compile
             let cmd2 = format!("cmd package compile -m speed -f {}", target);
             let status2 = Command::new("su")
                 .arg("-c")
                 .arg(&cmd2)
                 .status()
                 .with_context(|| "Failed to compile package")?;
-
             if !status2.success() {
                 eprintln!("{} Failed to compile {}", prefix, target);
             }
@@ -620,15 +524,13 @@ fn main() -> Result<()> {
     }
 
     if !args.json {
-        let msg = "Fetching package list".bold();
-        println!("{} {} ({}) ...", prefix, msg, args.r#type);
+        println!("{} {} ({}) ...", prefix, "Fetching package list".bold(), args.r#type);
     }
     let packages = Package::fetch_list(args.r#type)?;
-    
+
     if !args.json {
         println!("{} Found {} packages.", prefix, packages.len().to_string().green().bold());
-        let msg = "Fetching dexopt dump...".bold();
-        println!("{} {}", prefix, msg);
+        println!("{} {}", prefix, "Fetching dexopt dump...".bold());
     }
     let dump = Analyzer::fetch_dump()?;
     let analyzer = Analyzer::new(&dump);
@@ -642,39 +544,50 @@ fn main() -> Result<()> {
     let mut total_displayed = 0;
     let mut json_results = Vec::new();
 
-    // Filtering Logic
-    let filtered_packages: Vec<&Package> = packages
+    // Step 1: name filter (cheap string match)
+    let name_filtered: Vec<&Package> = packages
         .iter()
         .filter(|pkg| args.filter.as_ref().map_or(true, |f| pkg.name.contains(f)))
         .collect();
 
-    let display_data: Vec<(&Package, Option<String>)> = if args.verbose || args.json {
-        filtered_packages
-            .par_iter()
-            .map(|pkg| (*pkg, pkg.get_label()))
-            .collect()
-    } else {
-        filtered_packages.iter().map(|pkg| (*pkg, None)).collect()
-    };
+    // Step 2: status filter (cheap lookup, no label fetching)
+    let status_filtered: Vec<(&Package, Option<&Vec<DexOptInfo>>)> = name_filtered
+        .iter()
+        .filter_map(|pkg| {
+            let info_list = analyzer.get_info(&pkg.name);
+            if let Some(ref status_filter) = args.status {
+                let infos = info_list?;
+                if !infos.iter().any(|i| i.status.contains(status_filter)) {
+                    return None;
+                }
+                Some((*pkg, Some(infos)))
+            } else {
+                Some((*pkg, info_list))
+            }
+        })
+        .collect();
 
-    for (pkg, app_label) in display_data {
-        let info_list = analyzer.get_info(&pkg.name);
+    // Step 3: fetch labels only for survivors (parallel for verbose/json)
+    let display_data: Vec<(&Package, Option<String>, Option<&Vec<DexOptInfo>>)> =
+        if args.verbose || args.json {
+            status_filtered
+                .par_iter()
+                .map(|(pkg, info_list)| (*pkg, pkg.get_label(), *info_list))
+                .collect()
+        } else {
+            status_filtered
+                .iter()
+                .map(|(pkg, info_list)| (*pkg, None, *info_list))
+                .collect()
+        };
+
+    for (pkg, app_label, info_list) in display_data {
+        total_displayed += 1;
 
         if let Some(infos) = info_list {
-            // Apply Status Filter
-            if let Some(ref status_filter) = args.status {
-                if !infos.iter().any(|i| i.status.contains(status_filter)) {
-                    continue;
-                }
-            }
-
-            total_displayed += 1;
             for info in infos {
                 *stats.entry(info.status.clone()).or_insert(0) += 1;
             }
-        } else if args.status.is_some() {
-            // If status filter is active but app has no info, skip it
-            continue;
         }
 
         if args.json {
@@ -684,20 +597,26 @@ fn main() -> Result<()> {
                 "path": pkg.path,
                 "dexopt_info": info_list
             }));
-        } else {
-            if args.verbose {
-                UI::print_block_entry(&mut stdout, pkg, app_label.as_deref(), info_list)?;
-            } else if let Some(infos) = info_list {
-                for (i, info) in infos.iter().enumerate() {
-                    let colored_raw = UI::colorize_line(&info.raw_line, &info.status);
-                    if i == 0 {
-                        writeln!(stdout, "{} | {}", format!("{:<45}", pkg.name).bright_white(), colored_raw)?;
-                    } else {
-                        writeln!(stdout, "{:<45} | {}", "", colored_raw)?;
-                    }
+        } else if args.verbose {
+            UI::print_block_entry(&mut stdout, pkg, app_label.as_deref(), info_list)?;
+        } else if let Some(infos) = info_list {
+            for (i, info) in infos.iter().enumerate() {
+                let colored_raw = UI::colorize_line(&info.raw_line, &info.status);
+                if i == 0 {
+                    writeln!(stdout, "{} | {}", format!("{:<45}", pkg.name).bright_white(), colored_raw)?;
+                } else {
+                    writeln!(stdout, "{:<45} | {}", "", colored_raw)?;
                 }
-                writeln!(stdout)?;
             }
+            writeln!(stdout)?;
+        } else {
+            writeln!(
+                stdout,
+                "{} | {}",
+                format!("{:<45}", pkg.name).bright_white(),
+                "(no info found)".italic().red()
+            )?;
+            writeln!(stdout)?;
         }
     }
 
@@ -708,10 +627,8 @@ fn main() -> Result<()> {
 
         if args.verbose && !Package::is_aapt_available() {
             println!();
-            let msg1 = "Warning: 'aapt' is not installed. Some application labels might be missing.".yellow().bold();
-            let msg2 = "Install it via 'pkg install aapt' for the best experience.".yellow().bold();
-            eprintln!("{}", msg1);
-            eprintln!("{}", msg2);
+            eprintln!("{}", "Warning: 'aapt' is not installed. Some application labels might be missing.".yellow().bold());
+            eprintln!("{}", "Install it via 'pkg install aapt' for the best experience.".yellow().bold());
         }
     }
 
@@ -731,7 +648,7 @@ mod tests {
   arm64: [status=verify] [reason=prebuilt]
 "#;
         let analyzer = Analyzer::new(sample_dump);
-        
+
         let info_app = analyzer.get_info("com.example.app").unwrap();
         assert_eq!(info_app.len(), 1);
         assert_eq!(info_app[0].status, "speed-profile");
@@ -739,7 +656,47 @@ mod tests {
         let info_sys = analyzer.get_info("com.system.service").unwrap();
         assert_eq!(info_sys.len(), 1);
         assert_eq!(info_sys[0].status, "verify");
-        
+
         assert!(analyzer.get_info("non.existent").is_none());
+    }
+
+    #[test]
+    fn test_label_heuristic_filters_class_names() {
+        let cases: &[(&str, bool)] = &[
+            ("com.example.SomeActivity", false),                        // class-like
+            ("com.foo.bar", false),                                     // package-like
+            ("@0x1040001", false),                                      // resource ref
+            ("https://www.facebook.com/.well-known/assetlinks.json", false), // URL
+            ("[{ \"include\": \"https://example.com\" }]", false), // JSON blob
+            ("{ \"key\": \"value\" }", false),                     // JSON object
+            ("a".repeat(65).as_str(), false),                           // too long
+            ("My Cool App", true),                                      // real label
+            ("MyApp", true),                                            // simple word
+            ("Calculator", true),                                       // simple word
+            ("Facebook", true),                                         // real label
+        ];
+
+        for (label, should_keep) in cases {
+            assert_eq!(
+                Package::is_valid_label(label),
+                *should_keep,
+                "Failed for label: {:?}", label
+            );
+        }
+    }
+
+    #[test]
+    fn test_box_padding_is_exact() {
+        // p_l + content_width + p_r must equal box_width exactly
+        for content_len in [5, 20, 40, 60, 80] {
+            let min_width: usize = 40;
+            let max_term_width: usize = 120;
+            let box_width = (content_len + 4).max(min_width).min(max_term_width);
+            let p_space = box_width.saturating_sub(content_len);
+            let p_l = p_space / 2;
+            let p_r = p_space - p_l;
+            assert_eq!(p_l + content_len + p_r, box_width,
+                "Padding mismatch for content_len={}", content_len);
+        }
     }
 }
